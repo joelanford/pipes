@@ -20,10 +20,10 @@ type group struct {
   key string
 
   // Channel to signal goroutines to end
-  done chan bool
+  joinDone chan bool
 
   // Channel to send errors
-  errChan chan error
+  joinErrChan chan error
 
   // Used to wait for goroutines to finish
   wg sync.WaitGroup
@@ -35,22 +35,26 @@ func NewGroup(client *etcd.Client, destination string, name string) *group {
       name: name,
       destinationKey: "/streams/destinations/" + destination,
       key: "/streams/destinations/" + destination + "/" + name,
-      done: make(chan bool),
-      errChan: make(chan error),
+      joinDone: make(chan bool),
+      joinErrChan: make(chan error),
     }
     return d
 }
 
 func (g *group) Join(rejoin bool) {
+  // TODO: If the calls to waitForDestination or createGroup return an error,
+  // they will block until the calling program reads from the join error. If the
+  // calling program hasn't yet started reading from the error channel, this
+  // will block forever.
 
   // Wait for destination to be created
   if err := g.waitForDestination(); err != nil {
-    g.errChan <- err
+    g.joinErrChan <- err
   }
 
   // Create group in etcd
   if err := g.createGroup(2); err != nil {
-    g.errChan <- err
+    g.joinErrChan <- err
   }
 
   // Start goroutine to update the group ttl
@@ -65,19 +69,19 @@ func (g *group) Join(rejoin bool) {
 }
 
 func (g *group) Leave() {
-  g.done <- true
+  g.joinDone <- true
   g.wg.Wait()
 }
 
-func (g *group) ErrorChannel() <-chan error {
-  return g.errChan
+func (g *group) JoinErrorChannel() <-chan error {
+  return g.joinErrChan
 }
 
 func (g *group) maintainGroup(rejoin bool) {
   defer g.wg.Done()
   for {
     select {
-    case <- g.done:
+    case <- g.joinDone:
       // when a signal arrives on this channel, the Leave method has
       // been called, so we'll end the goroutine. We don't want to delete the
       // group because there may be other members.  If we're the last member,
@@ -90,7 +94,7 @@ func (g *group) maintainGroup(rejoin bool) {
         // If we lost connection to etcd, send the error, but keep attempting
         // future updates
         if e.ErrorCode == 501 {
-          g.errChan <- err
+          g.joinErrChan <- err
 
         // Else, if the destination or group directory is not present, we'll
         // either:
@@ -99,20 +103,20 @@ func (g *group) maintainGroup(rejoin bool) {
         } else if e.ErrorCode == 100 {
           if rejoin == true {
             if err := g.waitForDestination(); err != nil {
-              g.errChan <- err
+              g.joinErrChan <- err
             }
             if err := g.createGroup(2); err != nil {
-              g.errChan <- err
+              g.joinErrChan <- err
             }
           } else {
-            g.errChan <- err
+            g.joinErrChan <- err
             return
           }
 
         // Else, this is an unexpected error, so we'll let the caller know
         // and return immediately
         } else {
-          g.errChan <- err
+          g.joinErrChan <- err
           return
         }
       }
@@ -132,10 +136,7 @@ func (g group) waitForDestination() error {
     e := err.(*etcd.EtcdError)
     // If the destination does not exist, we need to wait for it.
     if e.ErrorCode == 100 {
-      // TODO: As is, if group.Leave() is called and the watch is running,
-      // the call to group.Leave() will block until this returns, which isn't
-      // great. We need to add another channel and pass it to etcd's watch
-      // function, so that the call to group.Leave() can cancel this watch.
+      // TODO: Pass a stop channel to this function and send true to it in group.Leave()
       if _, err := g.client.Watch(g.destinationKey, 0, false, nil, nil); err != nil {
         return err
       }

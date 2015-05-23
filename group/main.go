@@ -15,7 +15,7 @@ func main() {
   group.Join(true)
   log.Println("Joined group")
 
-  go monitorChannels(group.ErrorChannel())
+  go monitorChannels(group.JoinErrorChannel())
 
   time.Sleep(16*time.Second)
   group.Leave()
