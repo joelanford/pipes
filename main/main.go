@@ -2,7 +2,7 @@ package main;
 
 import (
   "github.com/coreos/go-etcd/etcd"
-  "pipes"
+  "github.com/joelanford/pipes"
   "time"
   "log"
 )
