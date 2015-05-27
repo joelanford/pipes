@@ -25,6 +25,16 @@ type group struct {
   // Channel to send errors
   joinErrChan chan error
 
+  // Create index of group in Etcd
+  createdIndex uint64
+
+  watchUrlDone chan bool
+  watchUrlRespChan chan *etcd.Response
+  watchUrlErrChan chan error
+
+  handleUrlChangesDone chan bool
+  handleUrlChangesErrChan chan error
+
   // Used to wait for goroutines to finish
   wg sync.WaitGroup
 }
@@ -37,6 +47,11 @@ func NewGroup(client *etcd.Client, destination string, name string) *group {
       key: "/streams/destinations/" + destination + "/" + name,
       joinDone: make(chan bool),
       joinErrChan: make(chan error),
+      watchUrlDone: make(chan bool),
+      watchUrlErrChan: make(chan error),
+      handleUrlChangesDone: make(chan bool),
+      handleUrlChangesErrChan: make(chan error),
+      createdIndex: 0,
     }
     return d
 }
@@ -66,15 +81,26 @@ func (g *group) Join(rejoin bool) {
   //   - when url is created, connect to socket at url
   //   - when url changes, disconnect old socket and connect new socket
   //   - when url is deleted, disconnect socket
+  g.wg.Add(1)
+  go g.watchForUrls()
+
+  g.wg.Add(1)
+  go g.handleUrlChanges()
 }
 
 func (g *group) Leave() {
   g.joinDone <- true
+  g.watchUrlDone <- true
+  g.handleUrlChangesDone <- true
   g.wg.Wait()
 }
 
 func (g *group) JoinErrorChannel() <-chan error {
   return g.joinErrChan
+}
+
+func (g *group) WatchUrlErrorChannel() <-chan error {
+  return g.watchUrlErrChan
 }
 
 func (g *group) maintainGroup(rejoin bool) {
@@ -150,13 +176,48 @@ func (g group) waitForDestination() error {
 }
 
 func (g *group) createGroup(ttl uint64) error {
-  if _, err := g.client.CreateDir(g.key, ttl); err != nil {
+  if resp, err := g.client.CreateDir(g.key, ttl); err != nil {
     e := err.(*etcd.EtcdError)
     // If the group already exists (ErrorCode 105), no big deal. Otherwise, return
     // an error
-    if e.ErrorCode != 105 {
+    if e.ErrorCode == 105 {
+      if resp, err := g.client.Get(g.destinationKey, false, false); err != nil {
+        return err
+      } else {
+        g.createdIndex = resp.Node.CreatedIndex
+      }
+    } else {
       return err
     }
+  } else {
+    g.createdIndex = resp.Node.CreatedIndex
   }
   return nil
+}
+
+func (g *group) watchForUrls() {
+  defer g.wg.Done()
+  g.watchUrlRespChan = make(chan *etcd.Response)
+  if _, err := g.client.Watch(g.key + "/url", g.createdIndex + 1, true, g.watchUrlRespChan, g.watchUrlDone); err != nil {
+    if err != etcd.ErrWatchStoppedByUser {
+      g.watchUrlErrChan <- err
+    }
+  }
+}
+
+func (g *group) handleUrlChanges() {
+  defer g.wg.Done()
+  for {
+    select {
+    case resp := <-g.watchUrlRespChan:
+      if resp.Action == "create" {
+        // TODO: Connect to socket at URL in resp.Node.Value
+      } else if resp.Action == "expire" {
+        // TODO: Disconnect socket
+      }
+    case <- g.handleUrlChangesDone:
+      // TODO: Disconnect socket
+      return
+    }
+  }
 }

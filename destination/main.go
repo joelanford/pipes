@@ -15,7 +15,9 @@ func main() {
   dest.Register(true)
   log.Println("Registered destination")
 
-  go monitorChannels(dest.RegistrationErrorChannel(), dest.WatchGroupErrorChannel(), dest.HandleGroupChangesErrorChannel())
+  go monitorChannels(dest.RegistrationErrorChannel(),
+                     dest.WatchGroupErrorChannel(),
+                     dest.HandleGroupChangesErrorChannel())
 
   time.Sleep(8*time.Second)
   dest.Unregister()
@@ -35,7 +37,7 @@ func monitorChannels(destRegisterErrorChan, destGroupWatchErrorChan, destGroupHa
     for {
       select {
       case err := <-destRegisterErrorChan:
-        log.Println("Destination error: " + err.Error())
+        log.Println("Destination Registration error: " + err.Error())
       case err := <-destGroupWatchErrorChan:
         log.Println("Destination Group Watch error: " + err.Error())
       case err := <-destGroupHandleErrorChan:

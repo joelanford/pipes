@@ -17,7 +17,10 @@ The destination can be unregistered (`destination.Unregister()`) to remove it fr
 ### `group`
 An instance of group is created using `pipes.NewGroup(etcd_client, destination_name, group_name)`
 
-A group is joined (`group.Join()`) by a receiver, creating a directory in Etcd, "/streams/destinations/[dest_name]/[group_name]/".  Once a group has been joined, a goroutine is started that maintains the group in Etcd (updates its TTL, waits for a destination to be re-created if it is removed, and re-creates the group if it is deleted out from under the calling process)
+A group is joined (`group.Join()`) by a receiver, creating a directory in Etcd, "/streams/destinations/[dest_name]/[group_name]/".  Once a group has been joined, several goroutines are started:
+  - `maintainGroup()` - maintains the group in Etcd (updates its TTL, waits for a destination to be re-created if it is removed, and re-creates the group if it is deleted out from under the calling process)
+  - `watchForUrls()` - watches Etcd for new URLs created by the desstination in the group's directory. Sends responses on an internal watch response channel.
+  - `handleUrlChanges()` receives responses from `watchForUrls()` and connects/disconnects a mangos pull socket, from when receivers can receive data sent by the destination.
 
 The group can be left (`group.Leave()`), which will stop the goroutine responsible for updating the TTL.  Note that leaving the group doesn't automatically delete it from Etcd.  In the case of multiple members joining the same group, the group directory will only expire from Etcd after all members have left the group.
 
@@ -35,9 +38,7 @@ go run group/main.go
 4. The destination hardcodes its URL when it creates a pipe.  We should probably pass parameters to the destination and have it create URLs based on those parameters.
 
 ## Next Steps
-1. Fix the known issues
-2. Add some custom error types instead of forwarding along the underlying Etcd/Mangos errors
-3. Add `destination_test.go` and `group_test.go`
-4. Add goroutines to the `group.Join()` call to:
-  - watch for additions, deletions, and changes to the group URL
-  - connect to the socket when the URL is created, update the socket connection when the URL changes, and teardown the connection when the URL is deleted.
+1. Add pull socket to `group.go` and Recv calls on the struct
+2. Fix the known issues
+3. Add some custom error types instead of forwarding along the underlying Etcd/Mangos errors
+4. Add `destination_test.go` and `group_test.go`

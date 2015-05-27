@@ -18,7 +18,11 @@ func main() {
   group.Join(true)
   log.Println("Joined group")
 
-  go monitorChannels(dest.RegistrationErrorChannel(), dest.WatchGroupErrorChannel(), dest.HandleGroupChangesErrorChannel(), group.JoinErrorChannel())
+  go monitorChannels(dest.RegistrationErrorChannel(),
+                     dest.WatchGroupErrorChannel(),
+                     dest.HandleGroupChangesErrorChannel(),
+                     group.JoinErrorChannel(),
+                     group.WatchUrlErrorChannel())
 
   time.Sleep(8*time.Second)
   dest.Unregister()
@@ -42,7 +46,7 @@ func main() {
   log.Println("Unregistered destination")
 }
 
-func monitorChannels(destRegisterErrorChan, destGroupWatchErrorChan, destGroupHandleErrorChan, groupJoinErrorChan <-chan error) {
+func monitorChannels(destRegisterErrorChan, destGroupWatchErrorChan, destGroupHandleErrorChan, groupJoinErrorChan, groupWatchUrlErrorChan <-chan error) {
   go func() {
     for {
       select {
@@ -53,7 +57,10 @@ func monitorChannels(destRegisterErrorChan, destGroupWatchErrorChan, destGroupHa
       case err := <-destGroupHandleErrorChan:
         log.Println("Destination Group Handling error: " + err.Error())
       case err := <-groupJoinErrorChan:
-        log.Println("Group error: " + err.Error())
+        log.Println("Group Join error: " + err.Error())
+      case err := <-groupWatchUrlErrorChan:
+        log.Println("Group Watch URL error: " + err.Error())
+
       }
     }
   }()
