@@ -10,7 +10,7 @@ An instance of destination is created using `pipes.NewDestination(etcd_client, d
 The destination is registered (`destination.Register()`) by the sender, creating a directory in Etcd, "/streams/destinations/[name]".  Once a destination has been registered, several goroutines are started:
   - `maintainDestination()` - maintains the destination in Etcd (updates its TTL and re-creates the directory if it is deleted out from under the calling process).
   - `watchForGroups()` - watches Etcd for new group directories created in the destination directory. Sends responses on an interal watch response channel.
-  - `handleGroupChanges()` - receives responses from `watchForGroups()` and creates/deletes pipes, to which receiver's can connect to receive data.
+  - `handleGroupChanges()` - receives responses from `watchForGroups()` and creates/deletes pipes, to which receivers can connect to receive data.
 
 The destination can be unregistered (`destination.Unregister()`) to remove it from Etcd, which incidentally removes all joined groups
 
@@ -29,14 +29,15 @@ go run group/main.go
 ```
 
 ## Known issues
-1. If group.Leave() is called and the group.waitForDestination() function is running and waiting for the destination to be created, the call to group.Leave() will block until the watch returns (i.e. the destination is created), which isn't great. We need to add another channel and pass it to etcd's watch function, so that the call to group.Leave() can cancel this watch.
-2. When destination.Register() is called, and the initial call to destination.createDirectory() returns an error, the program will block unless there's already another goroutine waiting for errors on the destination's RegistrationErrorChannel()
-3. When group.Join() is called, and the initial calls to group.waitForDestination() or group.createGroup() return an error, the program will block unless there's already another goroutine waiting for errors on the group's JoinErrorChannel()
-4. The pipe hardcodes its URL when it's created.  It should be passed to the NewPipe function.  How should we handle it in the destination code?  Pass a transport type, a bind address, and a port range?
+1. If `group.Leave()` is called and the `group.waitForDestination()` function is running and waiting for the destination to be created, the call to `group.Leave()` will block until the watch returns (i.e. the destination is created), which isn't great. We need to add another channel and pass it to etcd's watch function, so that the call to `group.Leave()` can cancel this watch.
+2. When `destination.Register()` is called, and the initial call to `destination.createDirectory()` returns an error, the program will block unless there's already another goroutine waiting for errors on `destination.RegistrationErrorChannel()``
+3. When `group.Join()` is called, and the initial calls to `group.waitForDestination()` or `group.createGroup()` return an error, the program will block unless there's already another goroutine waiting for errors on `group.JoinErrorChannel()``
+4. The destination hardcodes its URL when it creates a pipe.  We should probably pass parameters to the destination and have it create URLs based on those parameters.
 
 ## Next Steps
 1. Fix the known issues
-2. Add `destination_test.go` and `group_test.go`
-3. Add goroutines to the `group.Join()` call to:
+2. Add some custom error types instead of forwarding along the underlying Etcd/Mangos errors
+3. Add `destination_test.go` and `group_test.go`
+4. Add goroutines to the `group.Join()` call to:
   - watch for additions, deletions, and changes to the group URL
   - connect to the socket when the URL is created, update the socket connection when the URL changes, and teardown the connection when the URL is deleted.

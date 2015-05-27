@@ -28,6 +28,11 @@ func main() {
   dest.Register(true)
   log.Println("Registered destination")
 
+  time.Sleep(time.Second)
+  dest.Send([]byte("Hello, World!\n"))
+  dest.Send([]byte("Hola, World!\n"))
+  dest.Send([]byte("Bonjour, World!\n"))
+
   time.Sleep(8*time.Second)
   group.Leave()
   log.Println("Left group")

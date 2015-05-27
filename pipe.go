@@ -21,11 +21,11 @@ type pipe struct {
   socket mangos.Socket
 }
 
-func NewPipe(client *etcd.Client, groupKey string) *pipe {
+func NewPipe(client *etcd.Client, groupKey string, url string) *pipe {
     p := &pipe{
       client: client,
       key: groupKey + "/url",
-      url: "tcp://127.0.0.1:5000",
+      url: url,
     }
     return p
 }
@@ -44,6 +44,13 @@ func (p *pipe) Close() error {
     return err
   }
   p.socket.Close()
+  return nil
+}
+
+func (p pipe) Send(msg []byte) error {
+  if err := p.socket.Send(msg); err != nil {
+    return err
+  }
   return nil
 }
 

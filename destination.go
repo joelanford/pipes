@@ -110,6 +110,15 @@ func (d destination) HandleGroupChangesErrorChannel() <-chan error {
   return d.handleGroupChangesErrChan
 }
 
+func (d destination) Send(msg []byte) error {
+  for _, pipe := range d.pipes {
+    if err := pipe.Send(msg); err != nil {
+      return err
+    }
+  }
+  return nil
+}
+
 func (d *destination) maintainDestination(reregister bool) {
   defer d.wg.Done()
   for {
@@ -169,7 +178,7 @@ func (d *destination) handleGroupChanges() {
     case resp := <-d.watchGroupRespChan:
       if resp.Action == "create" {
         if len(strings.Split(resp.Node.Key, "/")) == 5 {
-          pipe := NewPipe(d.client, resp.Node.Key)
+          pipe := NewPipe(d.client, resp.Node.Key, "tcp://127.0.0.1:5000")
           if err := pipe.Open(); err != nil {
             d.handleGroupChangesErrChan <- err
           }
@@ -178,7 +187,7 @@ func (d *destination) handleGroupChanges() {
       } else if resp.Action == "expire" {
         if pipe, ok := d.pipes[resp.Node.Key]; ok {
           pipe.Close()
-          delete(d.pipes, key)
+          delete(d.pipes, resp.Node.Key)
         }
       }
     case <- d.handleGroupChangesDone:
