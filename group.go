@@ -2,6 +2,9 @@ package pipes
 
 import (
   "github.com/coreos/go-etcd/etcd"
+  "github.com/gdamore/mangos"
+  "github.com/gdamore/mangos/protocol/pull"
+  "github.com/gdamore/mangos/transport/tcp"
   "sync"
   "time"
 )
@@ -19,7 +22,7 @@ type group struct {
   // The etcd key of the group
   key string
 
-  // Channel to signal goroutines to end
+  // Channel to signal join goroutine to end
   joinDone chan bool
 
   // Channel to send errors
@@ -28,12 +31,25 @@ type group struct {
   // Create index of group in Etcd
   createdIndex uint64
 
+  // Channel to signal watch URL goroutine to end
   watchUrlDone chan bool
+
+  // Internal channel on which to send/receive URL change notices
   watchUrlRespChan chan *etcd.Response
+
+  // Channel to send errors about the watch URL goroutine
   watchUrlErrChan chan error
 
+  // Channel to signal handle URL changes goroutine to end
   handleUrlChangesDone chan bool
+
+  // Chanel to send errors about the handle URL changes goroutine
   handleUrlChangesErrChan chan error
+
+  // Pull socket to from which to receive data
+  // TODO: Maybe we should just extend the pipe struct to encapsulate this
+  //       socket and perform the URL watch and change handling?
+  socket mangos.Socket
 
   // Used to wait for goroutines to finish
   wg sync.WaitGroup
@@ -86,6 +102,10 @@ func (g *group) Join(rejoin bool) {
 
   g.wg.Add(1)
   go g.handleUrlChanges()
+}
+
+func (g group) Recv() ([]byte, error) {
+  return g.socket.Recv()
 }
 
 func (g *group) Leave() {
@@ -211,12 +231,24 @@ func (g *group) handleUrlChanges() {
     select {
     case resp := <-g.watchUrlRespChan:
       if resp.Action == "create" {
-        // TODO: Connect to socket at URL in resp.Node.Value
+        // Connect to socket at URL in resp.Node.Value
+        url := resp.Node.Value
+        if sock, err := pull.NewSocket(); err != nil {
+          g.handleUrlChangesErrChan <- err
+        } else {
+          sock.AddTransport(tcp.NewTransport())
+          if err = sock.Dial(url); err != nil {
+            g.handleUrlChangesErrChan <- err
+          }
+          g.socket = sock
+        }
       } else if resp.Action == "expire" {
-        // TODO: Disconnect socket
+        // Disconnect socket
+        g.socket.Close()
       }
     case <- g.handleUrlChangesDone:
       // TODO: Disconnect socket
+      g.socket.Close()
       return
     }
   }

@@ -33,9 +33,25 @@ func main() {
   log.Println("Registered destination")
 
   time.Sleep(time.Second)
-  dest.Send([]byte("Hello, World!\n"))
-  dest.Send([]byte("Hola, World!\n"))
-  dest.Send([]byte("Bonjour, World!\n"))
+  dest.Send([]byte("Hello, World!"))
+  dest.Send([]byte("Hola, World!"))
+  dest.Send([]byte("Bonjour, World!"))
+
+  if resp, err := group.Recv(); err != nil {
+    log.Println(err)
+  } else {
+    log.Println(string(resp))
+  }
+  if resp, err := group.Recv(); err != nil {
+    log.Println(err)
+  } else {
+    log.Println(string(resp))
+  }
+  if resp, err := group.Recv(); err != nil {
+    log.Println(err)
+  } else {
+    log.Println(string(resp))
+  }
 
   time.Sleep(8*time.Second)
   group.Leave()
